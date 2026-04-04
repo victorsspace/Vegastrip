@@ -639,11 +639,17 @@ const isConfigured = CONFIG.firebase.apiKey !== 'YOUR_API_KEY';
 if (!isConfigured) {
   document.getElementById('setup-screen').style.display = 'block';
 } else {
-  try { firebase.initializeApp(CONFIG.firebase); } catch(e) { console.log("Firebase init error:", e); }
+  try { firebase.initializeApp(CONFIG.firebase); } catch(e) {}
   if (CONFIG.emailjs.publicKey && CONFIG.emailjs.publicKey !== 'YOUR_EMAILJS_PUBLIC_KEY') {
     emailjs.init(CONFIG.emailjs.publicKey);
   }
   document.getElementById('loading-screen').style.display = 'flex';
+  // Safety net - show login after 4s no matter what
+  setTimeout(() => {
+    if (document.getElementById('loading-screen').style.display !== 'none') {
+      showScreen('auth-screen');
+    }
+  }, 4000);
   startApp();
 }
 
@@ -727,47 +733,32 @@ const colors=['#EF233C','#06D6A0','#FFD166','#118AB2','#FF6B6B','#A855F7','#F973
 function pc(i){ return colors[i%colors.length]; }
 
 function startApp(){
-  try {
-    auth = firebase.auth();
-    db   = firebase.firestore();
-  } catch(e) {
-    showError('Firebase failed to start: ' + e.message);
-    return;
-  }
-
-  const fallback = setTimeout(() => { showScreen('auth-screen'); }, 5000);
-
-  try {
-    auth.onAuthStateChanged(async user => {
-      clearTimeout(fallback);
-      if (!user) { showScreen('auth-screen'); return; }
-      showLoading('Checking access...');
-      currentUser = user;
-      try {
-        const doc = await db.collection('users').doc(user.uid).get();
-        if (!doc.exists) { await auth.signOut(); showScreen('auth-screen'); return; }
-        currentUserData = doc.data();
-        if (currentUserData.status !== 'approved') { showScreen('pending-screen'); return; }
-        document.getElementById('topbar-name').textContent = currentUserData.name;
-        if (currentUserData.role === 'admin') {
-          document.getElementById('topbar-badge').innerHTML = '<span class="admin-badge-top">ADMIN</span>';
-          document.getElementById('admin-tab').style.display = 'flex';
-        }
-        document.getElementById('topbar').style.display = 'flex';
-        showScreen('app-screen');
-        setLang(lang);
-        initListeners();
-      } catch(e){ console.error(e); showError('DB error: ' + e.message); }
-    });
-  } catch(e) {
+  try { auth = firebase.auth(); db = firebase.firestore(); } 
+  catch(e) { setTimeout(()=>showScreen('auth-screen'), 500); return; }
+  
+  const fallback = setTimeout(() => showScreen('auth-screen'), 5000);
+  
+  auth.onAuthStateChanged(async user => {
     clearTimeout(fallback);
-    showError('Auth error: ' + e.message);
-  }
-}
-
-function showError(msg) {
-  document.getElementById('loading-screen').innerHTML = '<div style="padding:30px;text-align:center"><div style="font-size:40px;margin-bottom:16px">⚠️</div><div style="color:#FFD166;font-family:monospace;font-size:13px;background:#1C1C28;padding:16px;border-radius:12px;margin-bottom:16px;word-break:break-all">' + msg + '</div><button onclick="showScreen("auth-screen")" style="background:#FFD166;color:#000;border:none;padding:12px 24px;border-radius:10px;font-size:14px;font-weight:700;cursor:pointer">Try Login Anyway</button></div>';
-  document.getElementById('loading-screen').style.display = 'flex';
+    if (!user) { showScreen('auth-screen'); return; }
+    showLoading('Checking access...');
+    currentUser = user;
+    try {
+      const doc = await db.collection('users').doc(user.uid).get();
+      if (!doc.exists) { await auth.signOut(); showScreen('auth-screen'); return; }
+      currentUserData = doc.data();
+      if (currentUserData.status !== 'approved') { showScreen('pending-screen'); return; }
+      document.getElementById('topbar-name').textContent = currentUserData.name;
+      if (currentUserData.role === 'admin') {
+        document.getElementById('topbar-badge').innerHTML = '<span class="admin-badge-top">ADMIN</span>';
+        document.getElementById('admin-tab').style.display = 'flex';
+      }
+      document.getElementById('topbar').style.display = 'flex';
+      showScreen('app-screen');
+      setLang(lang);
+      initListeners();
+    } catch(e){ showScreen('auth-screen'); }
+  });
 }
 
 function showScreen(id){
